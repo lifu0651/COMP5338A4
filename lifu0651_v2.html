@@ -1,0 +1,248 @@
+<article class="guide">
+  <carousel class="deck container-fluid">
+    <slide class="row-fluid">
+      <div class="col-sm-3">
+        <h3>Graph Building</h3>
+        <p class="lead">Please follow the 5 steps to create the OpenFlights graph.</p>
+      </div>
+      <div class="col-sm-9">
+        <p>Please execute step by step.</p>
+        <ol class="big">
+          <li>Creating Airlines Database
+            <figure>
+              <pre class="pre-scrollable code runnable">LOAD CSV FROM 'file:///airlines.dat' AS row
+CREATE (l:Airlines {
+id: toInteger(row[0]),
+name: row[1],
+alias: row[2],
+iata: row[3],
+icao: row[4],
+callsign: row[5],
+country: row[6],
+active: row[7]
+});</pre>
+            </figure>
+          </li>
+          <li>Creating Airports Database
+            <figure>
+              <pre class="pre-scrollable code runnable">LOAD CSV FROM 'file:///airports.dat' AS row
+CREATE (a:Airports {
+id: toInteger(row[0]),
+name: row[1],
+city: row[2],
+country: row[3],
+iata: row[4],
+icao: row[5],
+location: point({latitude: toFloat(row[6]),longitude: toFloat(row[7])})
+});</pre>
+            </figure>
+          </li>
+          <li>Creating Planes Database
+            <figure>
+              <pre class="pre-scrollable code runnable">LOAD CSV FROM 'file:///planes.dat' AS row
+CREATE (p:Planes {
+name: row[0],
+iata: row[1],
+icao: row[2]
+});</pre>
+            </figure>
+          </li>
+          <li>Creating indexes to accularate the speed of creating relationships.
+            <figure>
+              <pre class="pre-scrollable code runnable">CREATE INDEX FOR (a:Airports) ON (a.id);
+CREATE INDEX FOR (l:Airlines) ON (l.id);
+CREATE INDEX FOR (p:Planes) ON (p.iata);</pre>
+            </figure>
+          </li>
+          <li>Creating Routes Database and relationships between all databases.
+            <figure>
+              <pre class="pre-scrollable code runnable">LOAD CSV FROM 'file:///routes.dat' AS row
+MATCH (a:Airlines {id: toInteger(row[1])})
+MATCH (source:Airports {id: toInteger(row[3])})
+MATCH (destination:Airports {id: toInteger(row[5])})
+CREATE (r:Routes {
+airline: row[0],
+s_airport: row[2],
+d_airport: row[4],
+codeshare: row[6],
+stops: toInteger(row[7])
+})
+MERGE (source)<-[:SOURCE]-(r)
+MERGE (r)-[:DESTINATE]->(destination)
+MERGE (a)-[:OPERATE]->(r)
+WITH r, row[8] AS equipment
+UNWIND split(equipment, ' ') AS planeCode
+MATCH (p:Planes {iata: planeCode})
+MERGE (r)-[:USE]->(p);</pre>
+            </figure>
+          </li>
+        </ol>
+      </div>
+    </slide>
+    <slide class="row-fluid">
+      <div class="col-sm-3">
+        <h3>Graph Schema inspection</h3>
+        <p class="lead">View the the graph schema</p>
+        <figure>
+          <pre class="pre-scrollable code runnable">CALL db.schema.visualization</pre>
+        </figure>
+      </div>
+      <div class="col-sm-9">
+        <p class="lead">The Graph has 4 labels</p>
+        <ol class="big">
+          <li>Airports which has properties id, name, city, country, iata, icao, location.</li>
+          <li>Airlines which has properties id, name, alias, iata, icao, callsign, country, and active.</li>
+          <li>Planes which has properties name, iata, and icao.</li>
+          <li>Routes which has properties stops, airline, s_airport, d_airport.</li>
+        </ol>
+        <p class="lead"></p>
+        <p class="lead"></p>
+        <p class="lead">The relationships</p>
+        <ol class="big">
+          <li>Airports←[SOURCE]-Routes-[DESTINATION]→Airports</li>
+          <li>Airlines-[OPERATE]→Routes</li>
+          <li>Routes-[USE]→Planes</li>
+        </ol>
+      </div>
+    </slide>
+    <slide class="row-fluid">
+      <div class="col-sm-3">
+        <h3>NW1</h3>
+        <p class="lead">Please execute the code to get the result.</p>
+      </div>
+      <div class="col-sm-9">
+        <p class="lead">Identify the top five aeroplanes that are most frequently utilized on international flight routes. An international route is defined as a flight route where the source air- port and the destination airport are located in different countries/territories. Your query should return the aeroplane’s name and the corresponding number of inter- national routes it is used on, sorted in descending order based on the number of international routes.</p>
+        <figure>
+          <pre class="pre-scrollable code runnable">MATCH (source:Airports)<-[:SOURCE]-(r:Routes)-[:DESTINATE]->(destination:Airports)
+MATCH (r)-[:USE]->(p:Planes)
+WHERE source.country <> destination.country
+RETURN p.name AS aeroplane_name, COUNT(r) AS route_count
+ORDER BY route_count DESC
+LIMIT 5;</pre>
+        </figure>
+      </div>
+    </slide>
+    <slide class="row-fluid">
+      <div class="col-sm-3">
+        <h3>NW2</h3>
+        <p class="lead">Please execute the code to get the result.</p>
+      </div>
+      <div class="col-sm-9">
+        <p class="lead">Identify the top five airlines that operate flights in the highest number of distinct countries/territories. An airline is considered as operating in a country/territory if it has least one flight route where either the source or destination airport is located in that country/territory. Your query should return the airline name and the number of countries/territories they operate.</p>
+        <figure>
+          <pre class="pre-scrollable code runnable">MATCH (l:Airlines)-[:OPERATE]->(:Routes)-[]->(a:Airports)
+WITH l.name AS airlineName, COLLECT(DISTINCT a.country) AS countries
+RETURN airlineName, SIZE(countries) AS countryCount
+ORDER BY countryCount DESC
+LIMIT 5;</pre>
+        </figure>
+      </div>
+    </slide>
+    <slide class="row-fluid">
+      <div class="col-sm-3">
+        <h3>NW3</h3>
+        <p class="lead">Please execute the code to get the result.</p>
+      </div>
+      <div class="col-sm-9">
+        <p class="lead">Identify the top five airports that serve a greater number of international flights compared to domestic flights by calculating the difference between their international and domestic flight counts. An international flight is defined as any flight where either the source or destination airport is located in a different country/territory while a domestic flight involves both airports within the same country/territory. Your query should return the airport name, the number of international flights, the number of domestic flights and the difference between the number of international flights and the number of domestic flights. The results should be sorted by the difference between the number of international flights and the number of domestic flights.</p>
+        <figure>
+          <pre class="pre-scrollable code runnable">MATCH (a1:Airports)<-[]-(r1:Routes)-[]->(a2:Airports)
+WHERE a1.country <> a2.country
+WITH a1, COUNT(r1) AS internationalFlights
+            
+MATCH (a1)<-[]-(r2:Routes)-[]->(a2)
+WHERE a1.country = a2.country
+WITH a1, internationalFlights, COUNT(r2) AS domesticFlights
+            
+RETURN a1.name AS airportName,
+internationalFlights,
+domesticFlights,
+(internationalFlights - domesticFlights) AS difference
+ORDER BY difference DESC
+LIMIT 5;</pre>
+        </figure>
+      </div>
+    </slide>
+    <slide class="row-fluid">
+      <div class="col-sm-3">
+        <h3>NW4</h3>
+        <p class="lead">Please execute the code to get the result.</p>
+      </div>
+      <div class="col-sm-9">
+        <p class="lead">Identify all connecting flights from Sydney Kingsford Smith International Airport (IATA code: SYD) to London Heathrow Airport (IATA code: LHR) that include a stop in one intermediate (middle) city, with both flight legs operated by the same airline. Your query should output the airline’s name and the sequence of cities involved in the journey, including Sydney, the connecting city, and London. The results should be sorted by the airline’s name.</p>
+        <figure>
+          <pre class="pre-scrollable code runnable">MATCH (syd:Airports {iata: 'SYD'})<-[:SOURCE]-(r1:Routes)-[:DESTINATE]->(intermediate:Airports)<-[:SOURCE]-(r2:Routes)-[:DESTINATE]->(lhr:Airports {iata: 'LHR'})
+MATCH (l:Airlines)-[:OPERATE]->(r1)
+WHERE r1.airline = r2.airline
+RETURN l.name AS airline, [syd.city, intermediate.city, lhr.city] AS cities
+ORDER BY airline DESC;</pre>
+        </figure>
+      </div>
+    </slide>
+    <slide class="row-fluid">
+      <div class="col-sm-3">
+        <h3>NW5</h3>
+        <p class="lead">Please execute the code to get the result.</p>
+      </div>
+      <div class="col-sm-9">
+        <p class="lead">Identify the top five airports with the highest number of flight routes and, for each of these airports, determine the top three airlines based on the number of non-code- share routes they operate through the airport. Your query should return the name of the airport, the total number of routes operated by the airport, the name of the airline, and the number of non-code-share routes they operate through the airport.</p>
+        <figure>
+          <pre class="pre-scrollable code runnable">MATCH (a:Airports)-[]-(r:Routes)
+WITH a, count(r) AS RouteNumber
+ORDER BY RouteNumber DESC
+LIMIT 5
+            
+MATCH (a)-[]-(r:Routes)
+MATCH (l:Airlines)-[:OPERATE]->(r)
+WHERE r.codeshare IS NULL
+WITH a.name AS AirportName, RouteNumber, l.name AS airline, count(r) AS nonCodeNumber
+ORDER BY nonCodeNumber DESC
+            
+WITH AirportName, RouteNumber, collect([airline, nonCodeNumber]) AS NonCodeShareAirlines
+RETURN AirportName, RouteNumber, NonCodeShareAirlines[0..3];</pre>
+        </figure>
+      </div>
+    </slide>
+    <slide class="row-fluid">
+      <div class="col-sm-3">
+        <h3>Predicate function</h3>
+        <p class="lead">Please execute the code to get the result.</p>
+      </div>
+      <div class="col-sm-9">
+        <p class="lead">Find all the airlines that have at least one route’s codeshare which is not empty.</p>
+        <figure>
+          <pre class="pre-scrollable code runnable">MATCH (airline:Airlines)-[:OPERATE]->(route:Routes)
+WHERE ANY(code IN route.codeshare WHERE code IS NOT NULL)
+RETURN DISTINCT airline.name AS AirlineName</pre>
+        </figure>
+      </div>
+    </slide>
+    <slide class="row-fluid">
+      <div class="col-sm-3">
+        <h3>Spatial and list function</h3>
+        <p class="lead">Please execute the code to get the result.</p>
+      </div>
+      <div class="col-sm-9">
+        <p class="lead">Find all the airports more then 10000km away from Sydney Kingsford Smith International Airport (IATA code: SYD) and list all available airpline’s name between them. The results should be sorted by the airport’s name in descending order.</p>
+        <figure>
+          <pre class="pre-scrollable code runnable">MATCH (sydney:Airports {iata: 'SYD'})-[]-(r:Routes)-[]-(airport:Airports)
+MATCH (l:Airlines)-[]-(r)
+WHERE point.distance(sydney.location, airport.location) > 10000000
+RETURN Distinct airport.name AS AirportName, collect(DISTINCT l.name) AS Airlines;</pre>
+        </figure>
+      </div>
+    </slide>
+    <slide class="row-fluid">
+      <div class="col-sm-3">
+        <h3>Clear the Graph</h3>
+        <p class="lead">Delete all nodes, relationships, and indexes in the graph.</p>
+      </div>
+      <div class="col-sm-9">
+        <figure>
+          <pre class="pre-scrollable code runnable">MATCH (n) DETACH DELETE n;
+CALL apoc.schema.assert({},{},true) YIELD label, key RETURN *;</pre>
+        </figure>
+      </div>
+    </slide>
+  </carousel>
+</article>
